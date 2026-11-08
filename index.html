@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="pt-BR">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101010"><title>La Corte Barbearia</title><link rel="stylesheet" href="src/styles.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101010"><title>La Corte Barbearia</title><link rel="stylesheet" href="src/styles.css?v=20261108-2"></head>
 <body>
 <header class="topbar"><div class="brand"><span class="brand-mark">LC</span><div><strong>LA CORTE</strong><small>BARBEARIA</small></div></div><div class="top-actions"><a href="https://instagram.com/la_corte_oficial" target="_blank" rel="noreferrer">@la_corte_oficial</a><a href="https://wa.me/5548999426466">(48) 99942-6466</a></div></header>
 <main>
@@ -17,5 +17,14 @@
 <section id="barber-panel" class="screen panel"><button class="back" id="barber-logout" type="button">← Sair</button><p class="eyebrow">PAINEL PROFISSIONAL</p><h2>Fila de atendimento</h2><div id="barber-queue" class="queue-list"></div><p class="hint" id="barber-note" role="status"></p></section>
 <section id="admin-login" class="screen panel"><button class="back" data-go="home">← Voltar</button><p class="eyebrow">GESTÃO</p><h2>Administração</h2><form id="admin-login-form" class="form-grid"><label>E-mail<input required name="email" type="email" autocomplete="username"></label><label>Senha<input required name="password" type="password" autocomplete="current-password"></label><button class="primary" type="submit">Entrar</button></form><p class="hint" id="admin-login-note" role="status"></p></section>
 <section id="admin-panel" class="screen panel"><button class="back" id="admin-logout" type="button">← Sair</button><p class="eyebrow">GESTÃO LA CORTE</p><h2>Visão geral</h2><div id="admin-metrics" class="admin-grid"></div><h3>Solicitações antigas de cadastro (WhatsApp)</h3><div id="admin-registrations" class="queue-list"></div><p class="hint" id="registration-note" role="status"></p><h3>Serviços cadastrados</h3><div id="admin-services" class="admin-grid"></div><h3>Equipe</h3><div id="admin-barbers" class="admin-grid"></div><p class="hint" id="admin-note" role="status"></p></section>
-</main><footer>LA CORTE BARBEARIA <span>Atendimento com atitude.</span></footer><script type="module" src="src/app.js"></script>
+</main><footer>LA CORTE BARBEARIA <span>Atendimento com atitude.</span></footer><script>
+document.addEventListener("click",function(event){
+  var button=event.target.closest("[data-go]");
+  if(!button)return;
+  var target=document.getElementById(button.dataset.go);
+  if(!target)return;
+  document.querySelectorAll(".screen").forEach(function(screen){screen.classList.toggle("active",screen===target)});
+  window.scrollTo(0,0);
+});
+</script><script type="module" src="src/app.js?v=20261108-2"></script>
 </body></html>
