@@ -79,7 +79,7 @@ async function renderAdmin(){const specs=[["Clientes","customers"],["Barbeiros",
 document.getElementById("barber-logout").addEventListener("click",()=>logout());document.getElementById("admin-logout").addEventListener("click",()=>logout());
 supabase.auth.onAuthStateChange((event,session)=>{
   if(!session){state.customer=null;state.role=null;return}
-  if((event==="SIGNED_IN"||event==="INITIAL_SESSION")&&session.user?.user_metadata?.account_type==="lacorte_customer"&&!state.customer&&!state.pendingSignupEmail){
+  if((event==="SIGNED_IN"||event==="INITIAL_SESSION")&&!state.customer&&!state.pendingSignupEmail){
     Promise.resolve().then(async()=>{
       if(state.customer)return;
       try{
