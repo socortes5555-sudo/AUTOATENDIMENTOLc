@@ -21,63 +21,52 @@ document.getElementById("register-form").addEventListener("submit",async e=>{
   const first=String(f.get("first_name")||"").trim();
   const last=String(f.get("last_name")||"").trim();
   const email=String(f.get("email")||"").trim().toLowerCase();
-  const password=String(f.get("password")||"");
   if(!phone){note("register-note","Informe um WhatsApp brasileiro com DDD.",true);return}
   if(!email||!email.includes("@")){note("register-note","Informe um e-mail válido.",true);return}
-  if(password.length<10){note("register-note","Crie uma senha com pelo menos 10 caracteres.",true);return}
-  note("register-note","Criando sua conta e enviando o código...");
-  const {data,error}=await supabase.auth.signUp({
+  note("register-note","Enviando seu link seguro de acesso...");
+  const {error}=await supabase.auth.signInWithOtp({
     email,
-    password,
     options:{
+      shouldCreateUser:true,
       data:{account_type:"lacorte_customer",first_name:first,last_name:last,phone},
       emailRedirectTo:window.location.origin+window.location.pathname
     }
   });
   if(error){fail("register-note",error);return}
-  if(data?.session){
-    try{
-      const customer=await customerForSession();
-      await showServices(customer);
-    }catch(err){fail("register-note",err)}
-    return;
-  }
   state.pendingSignupEmail=email;
-  document.getElementById("verify-email-address").textContent="Enviamos um código para "+email+".";
+  document.getElementById("verify-email-address").textContent="Enviamos um link de acesso para "+email+".";
   e.currentTarget.reset();
-  note("verify-email-note","Digite o código de 6 dígitos que chegou no seu e-mail. Confira também o spam.");
+  note("verify-email-note","Abra o link no e-mail para confirmar e entrar automaticamente. Confira também o spam.");
   go("verify-email");
 });
 
-document.getElementById("verify-email-form").addEventListener("submit",async e=>{
-  e.preventDefault();
-  if(!state.pendingSignupEmail){note("verify-email-note","Refaça seu cadastro para solicitar um novo código.",true);go("register");return}
-  const f=new FormData(e.currentTarget);
-  const token=String(f.get("token")||"").replace(/\D/g,"");
-  if(!/^\d{6}$/.test(token)){note("verify-email-note","Digite os 6 números do código recebido.",true);return}
-  note("verify-email-note","Conferindo seu código...");
-  const {data,error}=await supabase.auth.verifyOtp({email:state.pendingSignupEmail,token,type:"email"});
-  if(error){fail("verify-email-note",error);return}
-  try{
-    if(!data?.session)throw new Error("O e-mail ainda não foi confirmado. Solicite um novo código e tente novamente.");
-    const customer=await customerForSession();
-    if(!customer)throw new Error("Seu cadastro foi confirmado, mas não localizamos seu perfil. Fale com a equipe da La Corte.");
-    state.pendingSignupEmail=null;
-    e.currentTarget.reset();
-    await showServices(customer);
-  }catch(err){fail("verify-email-note",err)}
-});
-
 document.getElementById("resend-email-code").addEventListener("click",async()=>{
-  if(!state.pendingSignupEmail){note("verify-email-note","Refaça seu cadastro para solicitar um novo código.",true);return}
-  note("verify-email-note","Solicitando outro código...");
-  const {error}=await supabase.auth.resend({type:"signup",email:state.pendingSignupEmail,options:{emailRedirectTo:window.location.origin+window.location.pathname}});
-  note("verify-email-note",error?error.message:"Se o endereço estiver correto, um novo código será enviado. Aguarde antes de solicitar novamente.",!!error);
+  if(!state.pendingSignupEmail){note("verify-email-note","Volte e informe seu e-mail novamente.",true);go("register");return}
+  note("verify-email-note","Solicitando outro link...");
+  const {error}=await supabase.auth.signInWithOtp({
+    email:state.pendingSignupEmail,
+    options:{emailRedirectTo:window.location.origin+window.location.pathname}
+  });
+  note("verify-email-note",error?error.message:"Se o endereço estiver correto, um novo link será enviado. Confira sua caixa de entrada e o spam.",!!error);
 });
 
-document.getElementById("change-password-form").addEventListener("submit",async e=>{e.preventDefault();if(!state.customer){note("change-password-note","Entre novamente para continuar.",true);return}const f=new FormData(e.currentTarget);const password=String(f.get("password")||"");if(password.length<10){note("change-password-note","Use uma senha com pelo menos 10 caracteres.",true);return}note("change-password-note","Atualizando sua senha...");const {error:authError}=await supabase.auth.updateUser({password});if(authError){fail("change-password-note",authError);return}const {error:dbError}=await supabase.from("customers").update({must_change_password:false}).eq("id",state.customer.id);if(dbError){fail("change-password-note",dbError);return}state.customer.must_change_password=false;e.currentTarget.reset();await showServices(state.customer)});
-document.getElementById("identify-form").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.currentTarget);note("identify-note","Entrando...");const identifier=String(f.get("email")).trim();const password=String(f.get("password"));const credentials=identifier.includes("@")?{email:identifier,password}:{phone:phoneE164(identifier),password};if(!credentials.email&&!credentials.phone){note("identify-note","Informe um e-mail válido ou WhatsApp com DDD.",true);return}const {error}=await supabase.auth.signInWithPassword(credentials);if(error){fail("identify-note",error);return}try{const customer=await customerForSession();if(!customer)throw new Error("Não encontramos seu cadastro vinculado a esta conta. Procure a equipe da La Corte.");state.customer=customer;if(customer.must_change_password){go("change-password");return}await showServices(customer)}catch(err){fail("identify-note",err)}});
-document.getElementById("forgot-password").addEventListener("click",async()=>{const identifier=document.querySelector("#identify-form [name=email]").value.trim();if(!identifier){note("identify-note","Informe seu e-mail ou WhatsApp.",true);return}if(!identifier.includes("@")){const phone=phoneE164(identifier);if(!phone){note("identify-note","Informe um WhatsApp válido com DDD.",true);return}const host=document.getElementById("identify-note");host.textContent="Para recuperar a senha do acesso por WhatsApp, fale com a equipe da La Corte. ";const link=document.createElement("a");link.href="https://wa.me/5548999426466?text="+encodeURIComponent("Olá! Preciso recuperar o acesso do autoatendimento. Meu WhatsApp é "+phone+".");link.target="_blank";link.rel="noopener noreferrer";link.textContent="Falar com a La Corte";link.style.color="#f47721";host.append(link);return}const {error}=await supabase.auth.resetPasswordForEmail(identifier);note("identify-note",error?error.message:"Se o e-mail estiver cadastrado, você receberá o link de recuperação.",!!error)});
+document.getElementById("identify-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const f=new FormData(e.currentTarget);
+  const email=String(f.get("email")||"").trim().toLowerCase();
+  if(!email||!email.includes("@")){note("identify-note","Informe o e-mail usado no cadastro.",true);return}
+  note("identify-note","Enviando seu link de acesso...");
+  const {error}=await supabase.auth.signInWithOtp({
+    email,
+    options:{shouldCreateUser:false,emailRedirectTo:window.location.origin+window.location.pathname}
+  });
+  if(error){fail("identify-note",error);return}
+  state.pendingSignupEmail=email;
+  document.getElementById("verify-email-address").textContent="Enviamos um link de acesso para "+email+".";
+  note("verify-email-note","Abra o link para entrar automaticamente. Confira também o spam.");
+  go("verify-email");
+});
+
 document.getElementById("join-queue").addEventListener("click",async()=>{if(!state.customer||!state.selected.size){note("service-note","Selecione pelo menos um serviço.",true);return}note("service-note","Registrando sua chegada...");const {error}=await supabase.rpc("lacorte_create_queue_entry",{p_customer_id:state.customer.id,p_service_ids:[...state.selected]});if(error){fail("service-note",error);return}try{await loadMyQueue()}catch(err){fail("service-note",err)}});
 document.getElementById("customer-logout").addEventListener("click",()=>logout());document.getElementById("queue-logout").addEventListener("click",()=>logout());
 async function staffLogin(formId,noteId,adminOnly,panel){const f=new FormData(document.getElementById(formId));note(noteId,"Verificando acesso...");const {error}=await supabase.auth.signInWithPassword({email:String(f.get("email")).trim(),password:String(f.get("password"))});if(error){fail(noteId,error);return}const {data:{user}}=await supabase.auth.getUser();const {data:role,error:roleError}=await supabase.from("lacorte_user_roles").select("role,barber_id").eq("user_id",user.id).maybeSingle();if(roleError||!role||(adminOnly?role.role!=="admin":!["admin","barber"].includes(role.role))){await logout(panel==="admin-panel"?"admin-login":"barber-login");note(noteId,"Esta conta não tem permissão para acessar esta área.",true);return}state.role=role;try{if(panel==="barber-panel")await renderBarberQueue();else await renderAdmin();go(panel)}catch(err){fail(noteId,err)}}
