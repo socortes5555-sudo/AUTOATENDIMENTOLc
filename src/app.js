@@ -16,58 +16,24 @@ async function loadMyQueue(){if(!state.customer)return;const date=new Intl.DateT
 document.addEventListener("click",e=>{const b=e.target.closest("[data-go]");if(b)go(b.dataset.go)});
 document.getElementById("register-form").addEventListener("submit",async e=>{
   e.preventDefault();
-  const email=String(new FormData(e.currentTarget).get("email")||"").trim().toLowerCase();
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){note("register-note","Informe um e-mail válido.",true);return}
-  note("register-note","Enviando seu código de 6 dígitos...");
-  const {error}=await supabase.auth.signInWithOtp({email,options:{shouldCreateUser:true,data:{signup_flow:"lacorte_customer"}}});
-  if(error){fail("register-note",error);return}
-  state.pendingSignupEmail=email;
-  document.getElementById("verify-email-address").textContent="Código enviado para "+email+".";
-  note("verify-email-note","Digite o código numérico recebido. Se não encontrar, confira o spam.");
-  go("verify-email");
-});
-
-document.getElementById("verify-email-form").addEventListener("submit",async e=>{
-  e.preventDefault();
-  const token=String(new FormData(e.currentTarget).get("token")||"").trim();
-  if(!state.pendingSignupEmail){note("verify-email-note","Informe seu e-mail novamente para receber outro código.",true);go("register");return}
-  if(!/^\d{6}$/.test(token)){note("verify-email-note","O código precisa ter 6 números.",true);return}
-  note("verify-email-note","Confirmando seu e-mail...");
-  const {data,error}=await supabase.auth.verifyOtp({email:state.pendingSignupEmail,token,type:"email"});
-  if(error){fail("verify-email-note",error);return}
-  const user=data?.user;
-  if(!user){note("verify-email-note","Não foi possível confirmar. Solicite um novo código.",true);return}
-  const {data:existing,error:lookupError}=await supabase.from("customers").select("id,first_name,last_name,phone,email,birth_date").eq("user_id",user.id).maybeSingle();
-  if(lookupError){fail("verify-email-note",lookupError);return}
-  if(existing){state.pendingSignupEmail=null;await showServices(existing);return}
-  note("profile-note","E-mail confirmado. Agora complete seus dados.");
-  go("profile");
-});
-
-document.getElementById("resend-email-code").addEventListener("click",async()=>{
-  if(!state.pendingSignupEmail){note("verify-email-note","Volte e informe seu e-mail novamente.",true);go("register");return}
-  note("verify-email-note","Enviando outro código...");
-  const {error}=await supabase.auth.signInWithOtp({email:state.pendingSignupEmail,options:{shouldCreateUser:true,data:{signup_flow:"lacorte_customer"}}});
-  note("verify-email-note",error?error.message:"Se o endereço estiver correto, outro código foi solicitado. Confira sua caixa de entrada e o spam.",!!error);
-});
-
-document.getElementById("profile-form").addEventListener("submit",async e=>{
-  e.preventDefault();
-  const userResult=await supabase.auth.getUser();
-  const user=userResult.data?.user;
-  if(userResult.error||!user){note("profile-note","Sua confirmação expirou. Volte e confirme seu e-mail novamente.",true);return}
   const f=new FormData(e.currentTarget);
-  const first=String(f.get("first_name")||"").trim();
-  const last=String(f.get("last_name")||"").trim();
-  const phone=phoneE164(f.get("phone"));
-  const birthDate=String(f.get("birth_date")||"");
-  if(!phone){note("profile-note","Informe um telefone brasileiro com DDD.",true);return}
-  if(!birthDate){note("profile-note","Informe sua data de aniversário.",true);return}
-  note("profile-note","Salvando seu cadastro...");
-  const {data,error}=await supabase.from("customers").insert({first_name:first,last_name:last,phone,email:user.email,birth_date:birthDate,user_id:user.id,must_change_password:false}).select("id,first_name,last_name,phone,email,birth_date").single();
-  if(error){note("profile-note",error.code==="23505"?"Este telefone ou e-mail já está vinculado a outro cadastro. Procure a equipe da La Corte para vincular corretamente.":error.message,true);return}
-  state.pendingSignupEmail=null;
-  await showServices(data);
+  const first_name=String(f.get("first_name")||"").trim();
+  const last_name=String(f.get("last_name")||"").trim();
+  const phone=String(f.get("phone")||"").trim();
+  const birth_date=String(f.get("birth_date")||"").trim();
+  if(first_name.length<2||last_name.length<2){note("register-note","Informe nome e sobrenome.",true);return}
+  if(!phoneE164(phone)){note("register-note","Informe um telefone brasileiro válido com DDD.",true);return}
+  if(!birth_date){note("register-note","Informe sua data de nascimento.",true);return}
+  const birth=new Date(birth_date+"T00:00:00");
+  if(Number.isNaN(birth.getTime())||birth>new Date()){note("register-note","Confira sua data de nascimento.",true);return}
+  note("register-note","Salvando seu cadastro...");
+  const {data,error}=await supabase.functions.invoke("lacorte-kiosk",{body:{action:"register",first_name,last_name,phone,birth_date}});
+  if(error){fail("register-note",error);return}
+  if(data?.error){note("register-note",data.error,true);return}
+  if(!data?.customer||!data?.lookup_token){note("register-note","Não foi possível concluir o cadastro. Tente novamente.",true);return}
+  state.customer=data.customer;
+  state.lookupToken=data.lookup_token;
+  try{await showServices(data.customer)}catch(err){fail("register-note",err)}
 });
 
 document.getElementById("identify-form").addEventListener("submit",async e=>{
@@ -118,18 +84,4 @@ async function renderAdmin(){const specs=[["Clientes","customers"],["Barbeiros",
 document.getElementById("barber-logout").addEventListener("click",()=>logout());document.getElementById("admin-logout").addEventListener("click",()=>logout());
 supabase.auth.onAuthStateChange((event,session)=>{
   if(!session){state.customer=null;state.role=null;return}
-  if((event==="SIGNED_IN"||event==="INITIAL_SESSION")&&!state.customer){
-    Promise.resolve().then(async()=>{
-      if(state.customer)return;
-      try{
-        const customer=await customerForSession();
-        if(customer&&!state.customer){state.pendingSignupEmail=null;await showServices(customer);return}
-        const user=session.user;
-        if(user?.user_metadata?.signup_flow==="lacorte_customer"){
-          state.pendingSignupEmail=user.email||null;
-          go("profile");
-        }
-      }catch(err){console.error("Não foi possível carregar o cadastro do cliente:",err)}
-    });
-  }
 });
