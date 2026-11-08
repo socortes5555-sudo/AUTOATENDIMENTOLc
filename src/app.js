@@ -1,7 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 const supabase=createClient("https://xwctsfpqwugygxpsrcfw.supabase.co","sb_publishable_L274hUI6sbyDGFe7u40U-Q_tK28Oh5s");
 const screens=[...document.querySelectorAll(".screen")];
-const state={customer:null,phone:null,registration:null,pendingSignupEmail:null,lookupToken:null,selected:new Set(),channel:null,role:null};
+const state={customer:null,phone:null,registration:null,pendingSignupEmail:null,lookupToken:null,selected:new Set(),services:[],channel:null,role:null};
+let kioskReturnTimer=null;
 function go(id){screens.forEach(s=>s.classList.toggle("active",s.id===id));window.scrollTo(0,0)}
 function note(id,msg,error=false){const e=document.getElementById(id);if(e){e.textContent=msg||"";e.style.color=error?"#ff9a75":""}}
 function fail(id,e){note(id,e?.message||"Não foi possível concluir. Tente novamente.",true)}
@@ -9,8 +10,10 @@ const money=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"B
 function phoneE164(v){let d=String(v||"").replace(/\D/g,"");if(d.startsWith("55")&&d.length>=12)d=d.slice(2);return [10,11].includes(d.length)?"+55"+d:null}
 async function customerForSession(){const {data:{user}}=await supabase.auth.getUser();if(!user)return null;const {data,error}=await supabase.from("customers").select("id,first_name,last_name,phone,email,birth_date").eq("user_id",user.id).maybeSingle();if(error)throw error;return data}
 async function logout(screen="home"){if(state.channel){await supabase.removeChannel(state.channel);state.channel=null}await supabase.auth.signOut();state.customer=null;state.role=null;state.lookupToken=null;state.pendingSignupEmail=null;state.selected.clear();go(screen)}
-async function loadServices(){const {data,error}=await supabase.from("services").select("id,name,detail,price").eq("active",true).order("name");if(error)throw error;const host=document.getElementById("service-list");host.replaceChildren();state.selected.clear();data.forEach(s=>{const l=document.createElement("label");l.className="service-option";const c=document.createElement("input");c.type="checkbox";c.value=s.id;c.addEventListener("change",()=>{c.checked?state.selected.add(s.id):state.selected.delete(s.id);total(data)});const info=document.createElement("span");const b=document.createElement("b");b.textContent=s.name;const small=document.createElement("small");small.textContent=s.detail||"";info.append(b,small);const price=document.createElement("strong");price.textContent=money(s.price);l.append(c,info,price);host.append(l)});total(data)}
+async function loadServices(){const {data,error}=await supabase.from("services").select("id,name,detail,price").eq("active",true).order("name");if(error)throw error;state.services=data||[];const host=document.getElementById("service-list");host.replaceChildren();state.selected.clear();data.forEach(s=>{const l=document.createElement("label");l.className="service-option";const c=document.createElement("input");c.type="checkbox";c.value=s.id;c.addEventListener("change",()=>{c.checked?state.selected.add(s.id):state.selected.delete(s.id);total(data)});const info=document.createElement("span");const b=document.createElement("b");b.textContent=s.name;const small=document.createElement("small");small.textContent=s.detail||"";info.append(b,small);const price=document.createElement("strong");price.textContent=money(s.price);l.append(c,info,price);host.append(l)});total(data)}
 function total(services){document.getElementById("service-total").textContent=money(services.filter(s=>state.selected.has(s.id)).reduce((n,s)=>n+Number(s.price),0))}
+function renderOrderReview(){const selected=state.services.filter(s=>state.selected.has(s.id));if(!selected.length){note("service-note","Selecione pelo menos um serviço antes de continuar.",true);return false}const host=document.getElementById("review-service-list");host.replaceChildren();selected.forEach(s=>{const row=document.createElement("div");row.className="service-option";const name=document.createElement("span");const title=document.createElement("b");title.textContent=s.name;const detail=document.createElement("small");detail.textContent=s.detail||"";name.append(title,detail);const price=document.createElement("strong");price.textContent=money(s.price);row.append(name,price);host.append(row)});document.getElementById("review-total").textContent=money(selected.reduce((sum,s)=>sum+Number(s.price),0));note("review-note","Confira se todos os serviços estão corretos.");go("order-review");return true}
+function scheduleKioskReturn(){if(kioskReturnTimer)clearTimeout(kioskReturnTimer);let seconds=5;const message=document.getElementById("queue-reset-note");if(message)message.textContent="Obrigado! Esta tela voltará ao início em 5 segundos para o próximo cliente.";kioskReturnTimer=setTimeout(async()=>{if(state.channel){await supabase.removeChannel(state.channel);state.channel=null}state.customer=null;state.lookupToken=null;state.selected.clear();state.services=[];go("home");kioskReturnTimer=null},5000)}
 async function showServices(customer){if(!customer)throw new Error("Não encontramos seu cadastro vinculado a esta conta. Procure a equipe da La Corte.");state.customer=customer;document.getElementById("customer-greeting").textContent="Olá, "+customer.first_name+"!";await loadServices();go("services")}
 async function loadMyQueue(){if(!state.customer)return;const date=new Intl.DateTimeFormat("sv-SE",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());const {data,error}=await supabase.from("lacorte_queue").select("id,queue_number,status,total_amount,created_at").eq("customer_id",state.customer.id).eq("queue_date",date).in("status",["waiting","in_progress"]).order("created_at",{ascending:false}).limit(1).maybeSingle();if(error)throw error;if(!data)return;document.getElementById("ticket-number").textContent=String(data.queue_number).padStart(2,"0");document.getElementById("ticket-status").textContent=data.status==="in_progress"?"Seu atendimento começou":"Aguardando atendimento";document.getElementById("ticket-total").textContent=money(data.total_amount);const {data:items}=await supabase.from("lacorte_queue_items").select("service_name").eq("queue_id",data.id);document.getElementById("ticket-services").textContent=(items||[]).map(x=>x.service_name).join(" • ");go("my-queue");if(state.channel)await supabase.removeChannel(state.channel);state.channel=supabase.channel("customer-queue-"+data.id).on("postgres_changes",{event:"*",schema:"public",table:"lacorte_queue",filter:"id=eq."+data.id},()=>loadMyQueue().catch(e=>console.error(e))).subscribe()}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-go]");if(b)go(b.dataset.go)});
@@ -52,14 +55,16 @@ document.getElementById("identify-form").addEventListener("submit",async e=>{
   await showServices(data.customer);
 });
 
+document.getElementById("review-order").addEventListener("click",renderOrderReview);
+document.getElementById("edit-services").addEventListener("click",()=>go("services"));
 document.getElementById("join-queue").addEventListener("click",async()=>{
   if(!state.customer||!state.selected.size){note("service-note","Selecione pelo menos um serviço.",true);return}
-  note("service-note","Registrando sua chegada...");
+  note("review-note","Registrando sua chegada...");
   const serviceIds=[...state.selected];
   if(state.lookupToken){
     const {data,error}=await supabase.functions.invoke("lacorte-kiosk",{body:{action:"queue",lookup_token:state.lookupToken,service_ids:serviceIds}});
-    if(error){fail("service-note",error);return}
-    if(data?.error){note("service-note",data.error,true);return}
+    if(error){fail("review-note",error);return}
+    if(data?.error){note("review-note",data.error,true);return}
     document.getElementById("ticket-number").textContent=String(data.ticket_number).padStart(2,"0");
     document.getElementById("ticket-status").textContent="Aguardando atendimento";
     document.getElementById("ticket-total").textContent=money(data.total_amount);
@@ -67,11 +72,12 @@ document.getElementById("join-queue").addEventListener("click",async()=>{
     document.getElementById("ticket-services").textContent=names.join(" • ");
     go("my-queue");
     state.lookupToken=null;
+    scheduleKioskReturn();
     return;
   }
   const {error}=await supabase.rpc("lacorte_create_queue_entry",{p_customer_id:state.customer.id,p_service_ids:serviceIds});
-  if(error){fail("service-note",error);return}
-  try{await loadMyQueue()}catch(err){fail("service-note",err)}
+  if(error){fail("review-note",error);return}
+  try{await loadMyQueue();scheduleKioskReturn()}catch(err){fail("review-note",err)}
 });
 document.getElementById("customer-logout").addEventListener("click",()=>logout());document.getElementById("queue-logout").addEventListener("click",()=>logout());
 async function staffLogin(formId,noteId,adminOnly,panel){const f=new FormData(document.getElementById(formId));note(noteId,"Verificando acesso...");const {error}=await supabase.auth.signInWithPassword({email:String(f.get("email")).trim(),password:String(f.get("password"))});if(error){fail(noteId,error);return}const {data:{user}}=await supabase.auth.getUser();const {data:role,error:roleError}=await supabase.from("lacorte_user_roles").select("role,barber_id").eq("user_id",user.id).maybeSingle();if(roleError||!role||(adminOnly?role.role!=="admin":!["admin","barber"].includes(role.role))){await logout(panel==="admin-panel"?"admin-login":"barber-login");note(noteId,"Esta conta não tem permissão para acessar esta área.",true);return}state.role=role;try{if(panel==="barber-panel")await renderBarberQueue();else await renderAdmin();go(panel)}catch(err){fail(noteId,err)}}
