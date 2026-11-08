@@ -106,7 +106,7 @@ document.getElementById("join-queue").addEventListener("click",async()=>{
   const {error}=await supabase.rpc("lacorte_create_queue_entry",{p_customer_id:state.customer.id,p_service_ids:serviceIds});
   if(error){fail("service-note",error);return}
   try{await loadMyQueue()}catch(err){fail("service-note",err)}
-});if(error){fail("service-note",error);return}try{await loadMyQueue()}catch(err){fail("service-note",err)}});
+});
 document.getElementById("customer-logout").addEventListener("click",()=>logout());document.getElementById("queue-logout").addEventListener("click",()=>logout());
 async function staffLogin(formId,noteId,adminOnly,panel){const f=new FormData(document.getElementById(formId));note(noteId,"Verificando acesso...");const {error}=await supabase.auth.signInWithPassword({email:String(f.get("email")).trim(),password:String(f.get("password"))});if(error){fail(noteId,error);return}const {data:{user}}=await supabase.auth.getUser();const {data:role,error:roleError}=await supabase.from("lacorte_user_roles").select("role,barber_id").eq("user_id",user.id).maybeSingle();if(roleError||!role||(adminOnly?role.role!=="admin":!["admin","barber"].includes(role.role))){await logout(panel==="admin-panel"?"admin-login":"barber-login");note(noteId,"Esta conta não tem permissão para acessar esta área.",true);return}state.role=role;try{if(panel==="barber-panel")await renderBarberQueue();else await renderAdmin();go(panel)}catch(err){fail(noteId,err)}}
 document.getElementById("barber-login-form").addEventListener("submit",e=>{e.preventDefault();staffLogin("barber-login-form","barber-login-note",false,"barber-panel")});
