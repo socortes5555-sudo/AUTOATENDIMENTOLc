@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 const supabase=createClient("https://xwctsfpqwugygxpsrcfw.supabase.co","sb_publishable_L274hUI6sbyDGFe7u40U-Q_tK28Oh5s");
 const screens=[...document.querySelectorAll(".screen")];
-const state={customer:null,phone:null,registration:null,selected:new Set(),channel:null,role:null};
+const state={customer:null,phone:null,registration:null,pendingSignupEmail:null,selected:new Set(),channel:null,role:null};
 function go(id){screens.forEach(s=>s.classList.toggle("active",s.id===id));window.scrollTo(0,0)}
 function note(id,msg,error=false){const e=document.getElementById(id);if(e){e.textContent=msg||"";e.style.color=error?"#ff9a75":""}}
 function fail(id,e){note(id,e?.message||"Não foi possível concluir. Tente novamente.",true)}
@@ -14,7 +14,66 @@ function total(services){document.getElementById("service-total").textContent=mo
 async function showServices(customer){if(!customer)throw new Error("Não encontramos seu cadastro vinculado a esta conta. Procure a equipe da La Corte.");state.customer=customer;document.getElementById("customer-greeting").textContent="Olá, "+customer.first_name+"!";await loadServices();go("services")}
 async function loadMyQueue(){if(!state.customer)return;const date=new Intl.DateTimeFormat("sv-SE",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());const {data,error}=await supabase.from("lacorte_queue").select("id,queue_number,status,total_amount,created_at").eq("customer_id",state.customer.id).eq("queue_date",date).in("status",["waiting","in_progress"]).order("created_at",{ascending:false}).limit(1).maybeSingle();if(error)throw error;if(!data)return;document.getElementById("ticket-number").textContent=String(data.queue_number).padStart(2,"0");document.getElementById("ticket-status").textContent=data.status==="in_progress"?"Seu atendimento começou":"Aguardando atendimento";document.getElementById("ticket-total").textContent=money(data.total_amount);const {data:items}=await supabase.from("lacorte_queue_items").select("service_name").eq("queue_id",data.id);document.getElementById("ticket-services").textContent=(items||[]).map(x=>x.service_name).join(" • ");go("my-queue");if(state.channel)await supabase.removeChannel(state.channel);state.channel=supabase.channel("customer-queue-"+data.id).on("postgres_changes",{event:"*",schema:"public",table:"lacorte_queue",filter:"id=eq."+data.id},()=>loadMyQueue().catch(e=>console.error(e))).subscribe()}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-go]");if(b)go(b.dataset.go)});
-document.getElementById("register-form").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const phone=phoneE164(f.get("phone"));if(!phone){note("register-note","Informe um WhatsApp brasileiro com DDD.",true);return}const first=String(f.get("first_name")).trim();const last=String(f.get("last_name")).trim();const email=String(f.get("email")||"").trim();note("register-note","Registrando sua solicitação...");const {data,error}=await supabase.rpc("lacorte_submit_registration_request",{p_first_name:first,p_last_name:last,p_phone:phone,p_email:email||null});if(error){fail("register-note",error);return}const message=["Olá! Acabei de enviar uma solicitação de cadastro no autoatendimento da La Corte Barbearia.","Nome: "+first+" "+last,"WhatsApp: "+phone,...(email?["E-mail: "+email]:[])].join("\n");const url="https://wa.me/5548999426466?text="+encodeURIComponent(message);const host=document.getElementById("register-note");host.textContent="Solicitação registrada! Agora envie a mensagem pelo WhatsApp para a equipe confirmar seus dados. A aprovação será feita pela administração.";const link=document.createElement("a");link.href=url;link.target="_blank";link.rel="noopener noreferrer";link.textContent="Enviar mensagem para a La Corte no WhatsApp";link.style.display="inline-block";link.style.marginTop="10px";link.style.color="#f47721";link.style.fontWeight="700";host.append(document.createElement("br"),link);e.currentTarget.reset()});
+document.getElementById("register-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const f=new FormData(e.currentTarget);
+  const phone=phoneE164(f.get("phone"));
+  const first=String(f.get("first_name")||"").trim();
+  const last=String(f.get("last_name")||"").trim();
+  const email=String(f.get("email")||"").trim().toLowerCase();
+  const password=String(f.get("password")||"");
+  if(!phone){note("register-note","Informe um WhatsApp brasileiro com DDD.",true);return}
+  if(!email||!email.includes("@")){note("register-note","Informe um e-mail válido.",true);return}
+  if(password.length<10){note("register-note","Crie uma senha com pelo menos 10 caracteres.",true);return}
+  note("register-note","Criando sua conta e enviando o código...");
+  const {data,error}=await supabase.auth.signUp({
+    email,
+    password,
+    options:{
+      data:{account_type:"lacorte_customer",first_name:first,last_name:last,phone},
+      emailRedirectTo:window.location.origin+window.location.pathname
+    }
+  });
+  if(error){fail("register-note",error);return}
+  if(data?.session){
+    try{
+      const customer=await customerForSession();
+      await showServices(customer);
+    }catch(err){fail("register-note",err)}
+    return;
+  }
+  state.pendingSignupEmail=email;
+  document.getElementById("verify-email-address").textContent="Enviamos um código para "+email+".";
+  e.currentTarget.reset();
+  note("verify-email-note","Digite o código de 6 dígitos que chegou no seu e-mail. Confira também o spam.");
+  go("verify-email");
+});
+
+document.getElementById("verify-email-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  if(!state.pendingSignupEmail){note("verify-email-note","Refaça seu cadastro para solicitar um novo código.",true);go("register");return}
+  const f=new FormData(e.currentTarget);
+  const token=String(f.get("token")||"").replace(/\\D/g,"");
+  if(!/^\\d{6}$/.test(token)){note("verify-email-note","Digite os 6 números do código recebido.",true);return}
+  note("verify-email-note","Conferindo seu código...");
+  const {data,error}=await supabase.auth.verifyOtp({email:state.pendingSignupEmail,token,type:"email"});
+  if(error){fail("verify-email-note",error);return}
+  try{
+    if(!data?.session)throw new Error("O e-mail ainda não foi confirmado. Solicite um novo código e tente novamente.");
+    const customer=await customerForSession();
+    if(!customer)throw new Error("Seu cadastro foi confirmado, mas não localizamos seu perfil. Fale com a equipe da La Corte.");
+    state.pendingSignupEmail=null;
+    e.currentTarget.reset();
+    await showServices(customer);
+  }catch(err){fail("verify-email-note",err)}
+});
+
+document.getElementById("resend-email-code").addEventListener("click",async()=>{
+  if(!state.pendingSignupEmail){note("verify-email-note","Refaça seu cadastro para solicitar um novo código.",true);return}
+  note("verify-email-note","Solicitando outro código...");
+  const {error}=await supabase.auth.resend({type:"signup",email:state.pendingSignupEmail,options:{emailRedirectTo:window.location.origin+window.location.pathname}});
+  note("verify-email-note",error?error.message:"Se o endereço estiver correto, um novo código será enviado. Aguarde antes de solicitar novamente.",!!error);
+});
 
 document.getElementById("change-password-form").addEventListener("submit",async e=>{e.preventDefault();if(!state.customer){note("change-password-note","Entre novamente para continuar.",true);return}const f=new FormData(e.currentTarget);const password=String(f.get("password")||"");if(password.length<10){note("change-password-note","Use uma senha com pelo menos 10 caracteres.",true);return}note("change-password-note","Atualizando sua senha...");const {error:authError}=await supabase.auth.updateUser({password});if(authError){fail("change-password-note",authError);return}const {error:dbError}=await supabase.from("customers").update({must_change_password:false}).eq("id",state.customer.id);if(dbError){fail("change-password-note",dbError);return}state.customer.must_change_password=false;e.currentTarget.reset();await showServices(state.customer)});
 document.getElementById("identify-form").addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.currentTarget);note("identify-note","Entrando...");const identifier=String(f.get("email")).trim();const password=String(f.get("password"));const credentials=identifier.includes("@")?{email:identifier,password}:{phone:phoneE164(identifier),password};if(!credentials.email&&!credentials.phone){note("identify-note","Informe um e-mail válido ou WhatsApp com DDD.",true);return}const {error}=await supabase.auth.signInWithPassword(credentials);if(error){fail("identify-note",error);return}try{const customer=await customerForSession();if(!customer)throw new Error("Não encontramos seu cadastro vinculado a esta conta. Procure a equipe da La Corte.");state.customer=customer;if(customer.must_change_password){go("change-password");return}await showServices(customer)}catch(err){fail("identify-note",err)}});
