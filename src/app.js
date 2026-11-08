@@ -53,8 +53,8 @@ document.getElementById("verify-email-form").addEventListener("submit",async e=>
   e.preventDefault();
   if(!state.pendingSignupEmail){note("verify-email-note","Refaça seu cadastro para solicitar um novo código.",true);go("register");return}
   const f=new FormData(e.currentTarget);
-  const token=String(f.get("token")||"").replace(/\\D/g,"");
-  if(!/^\\d{6}$/.test(token)){note("verify-email-note","Digite os 6 números do código recebido.",true);return}
+  const token=String(f.get("token")||"").replace(/\D/g,"");
+  if(!/^\d{6}$/.test(token)){note("verify-email-note","Digite os 6 números do código recebido.",true);return}
   note("verify-email-note","Conferindo seu código...");
   const {data,error}=await supabase.auth.verifyOtp({email:state.pendingSignupEmail,token,type:"email"});
   if(error){fail("verify-email-note",error);return}
