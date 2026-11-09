@@ -24,14 +24,15 @@ main{max-width:1500px;margin:auto;padding:28px 5vw}
 .photo-main{height:clamp(230px,32vh,360px);position:relative;overflow:hidden;background:#24201c}
 .photo-main>img{width:100%;height:100%;object-fit:cover;display:block;filter:brightness(.72);animation:heroZoom 18s ease-in-out infinite alternate}
 .photo-caption{position:absolute;left:24px;bottom:22px;display:grid;text-shadow:0 2px 12px #000}.photo-caption span{font-size:clamp(30px,4vw,52px);font-weight:900;letter-spacing:5px}.photo-caption small{font-size:10px;letter-spacing:3px;color:#ff9a57}
-.photo-strip{height:92px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px;overflow:hidden}
-.photo-strip img{width:100%;height:100%;object-fit:cover;filter:brightness(.78);animation:photoPulse 12s ease-in-out infinite}
-.photo-strip img:nth-child(2){animation-delay:4s}.photo-strip img:nth-child(3){animation-delay:8s}
+.photo-strip{height:92px;margin-top:9px;overflow:hidden}
+.photo-track{height:100%;width:200%;display:flex;gap:8px;animation:stripSlide 24s linear infinite}
+.photo-track img{height:100%;width:calc((100% - 40px)/6);flex:0 0 calc((100% - 40px)/6);object-fit:cover;filter:brightness(.82)}
+@keyframes stripSlide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .home-info{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
 .wifi-card{display:flex;align-items:center;gap:12px;min-width:0}.wifi-symbol{font-size:34px;color:var(--orange)}.wifi-card b,.wifi-card small{display:block}.wifi-card b{font-size:13px}.wifi-card small{font-size:11px;color:var(--muted)}.wifi-card small strong{color:#fff}
 .wifi-qr{width:78px;height:70px;flex:0 0 78px;border:1px dashed #8d6b51;display:grid;align-content:center;justify-items:center;color:var(--orange);background:#211a15}.wifi-qr span{font-size:12px;font-weight:900;letter-spacing:1px}.wifi-qr small{font-size:8px;color:#c4b6a8}
 .croc-mark{position:absolute;right:18px;top:14px;font-size:25px;filter:drop-shadow(0 2px 5px #000)}
-@keyframes heroZoom{from{transform:scale(1)}to{transform:scale(1.08)}}@keyframes photoPulse{0%,28%,100%{filter:brightness(.82)}14%{filter:brightness(1.15)}}
+@keyframes heroZoom{from{transform:scale(1)}to{transform:scale(1.08)}}
 footer{min-height:54px;border-top:1px solid var(--line);padding:15px 5vw;color:#8d8780;font-size:10px;letter-spacing:2px;display:flex;justify-content:space-between;gap:12px}
 .panel{max-width:800px;margin:0 auto;padding:18px 0}.panel h2{font-size:clamp(30px,4vw,48px);margin:12px 0 28px}.back{border:0;background:none;color:var(--muted);padding:0;margin-bottom:24px}.back:hover{color:var(--orange)}
 .choice-grid,.admin-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.choice{text-align:left;min-height:115px}.choice b,.choice span{display:block}.choice span{color:var(--muted);font-size:13px;margin-top:6px}
